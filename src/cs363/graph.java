@@ -1,5 +1,7 @@
 package cs363;
 
+import com.mysql.cj.xdevapi.UpdateStatement;
+
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.Scanner;
@@ -12,6 +14,9 @@ import java.sql.*;
 import javax.swing.*;
 import javax.swing.border.LineBorder;
 
+/**
+ * @author Gian Spadafora
+ */
 public class graph {
 
     private String username;
@@ -23,6 +28,12 @@ public class graph {
         password = "";
         userInput = "";
     }
+
+    /**
+     * runs the main program and takes inputs from the user. The user can select options 1, 2, 3, or 4 to insert a node,
+     * insert an edge, delete a node, or search for reachable nodes.
+     *
+     */
 
     public static void run() {
         String dbServer = "jdbc:mysql://localhost:3306/graph";
@@ -36,7 +47,7 @@ public class graph {
         ResultSet rs;
 
         try {
-            Class.forName("com.mysql.jdbc.Driver");
+            Class.forName("com.mysql.cj.jdbc.Driver");
             conn = DriverManager.getConnection(dbServer, userName, password);
             stmt = conn.createStatement();
             String sqlQuery = "";
@@ -45,9 +56,8 @@ public class graph {
 
             String instruction = "1: Insert new graph node" + "\n"
                     + "2: Insert new edge"
-                    + "\n" + "3: Find all food without green onion as ingredient." + "\n"
-                    + "4: Find all ingredients and amount of each ingredient of Pad Thai" + "\n"
-                    + "5: Quit Program";
+                    + "\n" + "3: Remove a node" + "\n"
+                    + "4: Find reachable nodes";
 
             while (true) {
                 option = JOptionPane.showInputDialog(instruction);
@@ -74,71 +84,118 @@ public class graph {
                     String dropQuery = "drop procedure if exists edge_test;";
                     runQuery(stmt, dropQuery, 1);
 
-                    sqlQuery =
-                            "CREATE procedure edge_test(in startnode varchar(10), in endnode varchar(10), in cost int, out failure int(1)) " +
-                            "this_proc: BEGIN " +
-                            "Declare total_rows int DEFAULT 0; " +
-                            "Declare row_a varchar(10); " +
-                            "Declare row_b varchar(10); " +
-                            "Select nodename From nodes where nodes.nodename = startnode into row_a; " +
-                            "Select nodename From nodes where nodes.nodename = endnode into row_b; " +
-                            "if(row_a = startnode and row_b = endnode) THEN " +
-                            "insert ignore into edges values (startnode, endnode, cost); " +
-                            "LEAVE this_proc; " +
-                            "elseif (row_a != startnode) then " +
-                            "set failure = 1; " +
-                            "LEAVE this_proc; " +
-                            "elseif (row_b != endnode) then " +
-                            "set failure = 2; " +
-                            "LEAVE this_proc; " +
-                            "END IF; " +
-                            "END";
+                    String sqlQuery1 = "Select * from nodes where nodename = \'" + startnode + "\'";
+                    String sqlQuery2 = "Select * from nodes where nodename = \'" + endnode + "\'";
 
-                           ProcQuery = "{CALL edge_test(?,?,?,?)}";
+                    stmt.executeQuery(sqlQuery1);
+                    rs = stmt.getResultSet();
 
-                    runQuery(stmt, sqlQuery, 1);
-                    cs = conn.prepareCall(ProcQuery);
-
-
-                    //failure = runQuery(cs, ProcQuery, 2);
-
-                    cs.setString("startnode", startnode);
-                    cs.setString("endnode", endnode);
-                    cs.setString("cost", cost);
-                    cs.registerOutParameter(4, java.sql.Types.INTEGER);
-
-                    cs.execute();
-                    rs = cs.getResultSet();
-                    rs.next();
-                    failure = rs.next();
-                    System.out.println(IsResultSet);
-                    System.out.println("failure: " + failure);
-
-                    if(failure == 1){
-                        String newImportance = "Startnode doesn't exist, input node's importance" ;
-                        String importance = JOptionPane.showInputDialog(newImportance);
-                        String newQuery = "insert into nodes values (\'" + startnode + "\', \'" + importance + "\')";
-                        failure = runQuery(stmt, sqlQuery, 0);
+                    if(rs.next() == false){
+                        String askImportance = "startnode doesn't exist. Give an importance value for it";
+                        String importance = JOptionPane.showInputDialog(askImportance);
+                        String insertA = "insert into nodes values (\'" + startnode + "\',\'" + importance + "\')";
+                        stmt.executeUpdate(insertA);
                     }
-                    if(failure == 2){
-                        String newImportance = "Startnode doesn't exist, input node's importance" ;
-                        String importance = JOptionPane.showInputDialog(newImportance);
-                        String newQuery = "insert into nodes values (\'" + endnode + "\', \'" + importance + "\')";
-                        failure = runQuery(stmt, sqlQuery, 0);
+
+                    stmt.executeQuery(sqlQuery2);
+                    rs = stmt.getResultSet();
+
+                    if(rs.next() == false){
+                        String askImportance = "endnode doesn't exist. Give an importance value for it";
+                        String importance = JOptionPane.showInputDialog(askImportance);
+                        String insertB = "insert into nodes values (\'" + endnode + "\',\'" + importance + "\')";
+                        stmt.executeUpdate(insertB);
                     }
+
+                    String sqlQueryInsertEdge = "insert into edges values (\'" + startnode + "\'," + "\'" + endnode + "\'," + "\'" + cost + "\')";
+                    stmt.executeUpdate(sqlQueryInsertEdge);
+
+
                 } else if (option.equals("3")) {
-                    sqlQuery = "";
-                    runQuery(stmt, sqlQuery, 1);
+                    String deleteString = "Select node to delete";
+                    String node = JOptionPane.showInputDialog(deleteString);
+                    String deleteFromEdges = "Delete from edges where startnode = \'" + node + "\'" + "OR endnode = \'" + node + "\'";
+                    stmt.executeUpdate(deleteFromEdges);
+                    String deleteQuery = "Delete from nodes where nodename = \'" + node + "\'";
+                    stmt.executeUpdate(deleteQuery);
+
+
                 } else if (option.equals("4")) {
-                    sqlQuery = "";
-                    runQuery(stmt, sqlQuery, 1);
+
+                    CallableStatement cs;
+                    sqlQuery = "Find reachable nodes from";
+                    String node = JOptionPane.showInputDialog(sqlQuery);
+
+                    String dropQuery1 = "drop procedure if exists reachable";
+                    String dropQuery2 = "drop procedure if exists reach";
+
+                    stmt.executeUpdate(dropQuery1);
+                    stmt.executeUpdate(dropQuery2);
+
+                    String setRecursion = "SET @@Session.max_sp_recursion_depth = 255;";
+                    stmt.executeUpdate(setRecursion);
+
+                    String createReach =
+
+                    "create  procedure reach() " +
+                    "BEGIN " +
+                    "Truncate table newneighbors; " +
+                    "insert into results(Select temp.startnode, temp.endnode from temp); " +
+                    "Insert into newneighbors (Select t.startnode, e.endnode from temp t inner join edges e on t.endnode = e.startnode); " +
+
+                    "IF((Select count(*) from newneighbors) > 0) Then " +
+                        "truncate table temp; " +
+                        "insert into temp(Select * from newneighbors); " +
+                        "call reach(); " +
+                    "END IF; " +
+
+                    "END ";
+
+                    stmt.executeUpdate(createReach);
+
+                    String createReachable =
+                    "create procedure reachable(in origin varchar(10)) " +
+                    "BEGIN " +
+                    "drop table if exists results; " +
+                    "drop table if exists temp; " +
+                    "drop table if exists newneighbors; " +
+
+                    "Create table results(startnode varchar(10), endnode varchar(10)); " +
+                    "Create table temp(startnode varchar(10), endnode varchar(10)); " +
+                    "Create table newneighbors(startnode varchar(10), endnode varchar(10)); " +
+
+                    "Insert into temp(Select startnode, endnode from edges where startnode = origin); " +
+
+                    "call reach(); " +
+
+                    "Select * from results; " +
+
+                    "END ";
+
+                    stmt.executeUpdate(createReachable);
+
+                    cs = conn.prepareCall("{call reachable(?)}");
+                    cs.setString(1, node);
+                    cs.executeQuery();
+                    rs = cs.getResultSet();
+                    ResultSetMetaData rsmd = rs.getMetaData();
+
+                    int columnsNumber = rsmd.getColumnCount();
+
+                    System.out.println("Original node on the left");
+                    while(rs.next()){
+
+                        for (int i = 1; i <= columnsNumber; i++) {
+                            if (i > 1) System.out.print(",  ");
+                            String columnValue = rs.getString(i).substring(0, 1);
+                            System.out.print(columnValue);
+                        }
+                        System.out.println("");
+                    }
                 } else {
                     break;
                 }
             }
-
-            stmt.close();
-            conn.close();
         } catch (Exception e) {
             System.out.println("Program terminates due to errors");
             e.printStackTrace(); // for debugging}
@@ -147,6 +204,10 @@ public class graph {
 
     }
 
+    /**
+     * Asks user for DB username and password.
+     * @return String with username and password.
+     */
     public static String[] loginDialog() {
         String result[] = new String[2];
         JPanel panel = new JPanel(new GridBagLayout());
